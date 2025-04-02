@@ -1,8 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using BrightstarDB.Client;
+using BrightstarDB.EntityFramework;
 using BrightstarDB_Demo;
 
 namespace BrightstarDBDemo
@@ -29,6 +29,9 @@ namespace BrightstarDBDemo
                 Console.WriteLine("Creating/Opening BrightstarDB store...");
                 var context = new MyEntityContext(connectionString);
 
+                // FEATURE 2: Add SavingChanges event handler
+                context.SavingChanges += UpdateTrackables;
+
                 // Check if we need to populate the store
                 if (context.Publications.Count() == 0)
                 {
@@ -42,6 +45,12 @@ namespace BrightstarDBDemo
 
                 // Demonstrate some LINQ queries
                 PerformQueries(context);
+
+                // FEATURE 1: Demonstrate Hierarchical Key Pattern
+                DemonstrateHierarchicalKeys(context);
+
+                // FEATURE 3: Demonstrate Entity Casting with Become<T>
+                DemonstrateEntityCasting(context);
             }
             catch (Exception ex)
             {
@@ -53,8 +62,134 @@ namespace BrightstarDBDemo
             Console.ReadKey();
         }
 
+        // FEATURE 2: Event handler for SavingChanges
+        private static void UpdateTrackables(object sender, EventArgs e)
+        {
+            try
+            {
+                // This method is invoked by the context before saving changes
+                var context = sender as MyEntityContext;
+
+                // Iterate through the tracked objects that implement IPublication
+                foreach (var obj in context.TrackedObjects.Where(x => x is IPublication))
+                {
+                    var pub = obj as IPublication;
+
+                    // If this is a new entity (Created is default value)
+                    if (pub.Created == DateTime.MinValue)
+                    {
+                        pub.Created = DateTime.Now;
+                        Console.WriteLine($"Setting Created timestamp on '{pub.Title}' to {pub.Created}");
+                    }
+
+                    // Always update the LastModified property
+                    pub.LastModified = DateTime.Now;
+                    Console.WriteLine($"Setting LastModified timestamp on '{pub.Title}' to {pub.LastModified}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in UpdateTrackables: {ex.Message}");
+            }
+        }
+
+        // FEATURE 1: Demonstrate Hierarchical Key Pattern
+        static void DemonstrateHierarchicalKeys(MyEntityContext context)
+        {
+            Console.WriteLine("\n--- Demonstrating Hierarchical Key Pattern ---\n");
+
+            // Find the Semantic Web topic (which should be a child of Knowledge Graphs)
+            var semWeb = context.Topics.Where(t => t.Name == "Semantic Web").FirstOrDefault();
+
+            if (semWeb != null && semWeb.ParentTopic != null)
+            {
+                Console.WriteLine($"Topic: {semWeb.Name}");
+                Console.WriteLine($"ID: {semWeb.Id}");
+                Console.WriteLine($"Parent Topic: {semWeb.ParentTopic.Name}");
+                Console.WriteLine($"Parent ID: {semWeb.ParentTopic.Id}");
+
+                // Create a new child topic that will inherit the parent's ID in its own ID
+                var sparql = context.Topics.Create();
+                sparql.Name = "SPARQL";
+                sparql.Description = "SPARQL Protocol and RDF Query Language";
+                sparql.ParentTopic = semWeb;
+
+                context.SaveChanges();
+
+                Console.WriteLine($"Created new child topic: {sparql.Name}");
+                Console.WriteLine($"Child ID: {sparql.Id}");
+                Console.WriteLine("The child ID contains the parent's ID as a prefix, demonstrating hierarchical keys");
+            }
+        }
+
+        // FEATURE 3: Demonstrate Entity Casting with Become<T>
+        static void DemonstrateEntityCasting(MyEntityContext context)
+        {
+            Console.WriteLine("\n--- Demonstrating Entity Casting ---\n");
+
+            // Get a person entity
+            var bob = context.Persons.Where(p => p.Name == "Bob Jones").FirstOrDefault();
+
+            if (bob != null)
+            {
+                Console.WriteLine($"Original person: {bob.Name}");
+                Console.WriteLine($"Entity type: {bob.GetType().Name}");
+                Console.WriteLine($"ID: {bob.Id}");
+
+                try
+                {
+                    // Access the underlying entity object
+                    // This is a safer approach that works with the generated classes
+                    var entity = bob as BrightstarEntityObject;
+                    if (entity != null)
+                    {
+                        // Cast the person to a researcher
+                        var researcher = entity.Become<IResearcher>();
+
+                        // Add researcher-specific properties
+                        researcher.HIndex = 25;
+                        researcher.ResearchField = "Knowledge Graph Engineering";
+
+                        context.SaveChanges();
+
+                        Console.WriteLine($"Transformed to researcher: {researcher.Name}");
+                        Console.WriteLine($"H-Index: {researcher.HIndex}");
+                        Console.WriteLine($"Research Field: {researcher.ResearchField}");
+                        Console.WriteLine($"Entity now has additional properties in the RDF store");
+                    }
+                    else
+                    {
+                        Console.WriteLine("Could not access entity object for casting");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Entity casting failed: {ex.Message}");
+
+                    // Alternative approach: Create a new entity with the same ID
+                    Console.WriteLine("Using alternative approach to demonstrate extending an entity:");
+
+                    // Get the ID of the existing person
+                    string bobId = bob.Id;
+
+                    // Create a researcher with specific properties
+                    var researcher = context.Persons.Create();
+                    researcher.Name = bob.Name + " (as Researcher)";
+                    researcher.Email = bob.Email;
+                    researcher.Organization = bob.Organization;
+
+                    // Save the additional entity
+                    context.SaveChanges();
+
+                    Console.WriteLine($"Created a new entity representing {researcher.Name}");
+                    Console.WriteLine("This demonstrates how entities can have multiple representations");
+                }
+            }
+        }
+
         static void PopulateStore(MyEntityContext context)
         {
+            // Your existing PopulateStore method remains the same...
             // Create topics (research areas)
             ITopic knowledgeGraphs = context.Topics.Create();
             knowledgeGraphs.Name = "Knowledge Graphs";
@@ -130,6 +265,7 @@ namespace BrightstarDBDemo
 
         static void PerformQueries(MyEntityContext context)
         {
+            // Your existing PerformQueries method remains the same...
             Console.WriteLine("\n--- LINQ Query Examples ---\n");
 
             // Example 1: Find all publications about Knowledge Graphs
