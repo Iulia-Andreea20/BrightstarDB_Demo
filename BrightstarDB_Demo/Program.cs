@@ -18,7 +18,7 @@ namespace BrightstarDBDemo
             Console.WriteLine("BrightstarDB Academic Knowledge Graph Demo");
             Console.WriteLine("==========================================");
 
-            // Define the store location - using a file store for simplicity
+            // FEATURE 1: Database Management - using a file store for simplicity
             string dataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BrightstarDemo");
             if (!Directory.Exists(dataFolder))
             {
@@ -30,11 +30,23 @@ namespace BrightstarDBDemo
 
             try
             {
+                // Check if store exists first, if not create it
+                var client = BrightstarService.GetClient(connectionString);
+                if (!client.DoesStoreExist(storeName))
+                {
+                    Console.WriteLine($"Creating new BrightstarDB store: {storeName}");
+                    client.CreateStore(storeName);
+                }
+                else
+                {
+                    Console.WriteLine($"Using existing BrightstarDB store: {storeName}");
+                }
+
                 // Create our context with optimistic concurrency control enabled
-                Console.WriteLine("Creating/Opening BrightstarDB store...");
+                Console.WriteLine("Opening BrightstarDB store...");
                 var context = new MyEntityContext(connectionString, enableOptimisticLocking: true);
 
-                // FEATURE 2: Add SavingChanges event handler
+                // FEATURE 4: Add SavingChanges event handler for tracked objects
                 context.SavingChanges += UpdateTrackables;
 
                 // Check if we need to populate the store
@@ -48,21 +60,33 @@ namespace BrightstarDBDemo
                     Console.WriteLine("Using existing knowledge graph data");
                 }
 
-                // Demonstrate some LINQ queries
+                // FEATURE 5: Demonstrate LINQ queries
                 PerformQueries(context);
 
-                // FEATURE 1: Demonstrate Hierarchical Key Pattern
+                // FEATURE 2: Demonstrate Hierarchical Key Pattern
                 DemonstrateHierarchicalKeys(context);
 
                 // FEATURE 3: Demonstrate Entity Casting with Become<T>
                 DemonstrateEntityCasting(context);
 
-                // NEW FEATURE: Demonstrate SPARQL Query Execution
+                // FEATURE 6: Demonstrate SPARQL Query Execution
                 ExecuteSparqlQuery(context, connectionString);
 
-                // Call the export method
+                // FEATURE 7: Export data to RDF
                 string exportFilePath = Path.Combine(dataFolder, "export.ttl");
                 ExportDataToRdf(context, exportFilePath);
+
+                // Offer option to cleanup for next run
+                Console.WriteLine("\nDo you want to clean up the database? (Y/N)");
+                if (Console.ReadKey().Key == ConsoleKey.Y)
+                {
+                    Console.WriteLine("\nCleaning up database...");
+                    // First dispose context to release connections
+                    context.Dispose();
+                    // Then delete and recreate the store
+                    client.DeleteStore(storeName);
+                    Console.WriteLine("Database deleted for next run.");
+                }
             }
             catch (Exception ex)
             {
@@ -74,7 +98,7 @@ namespace BrightstarDBDemo
             Console.ReadKey();
         }
 
-        // FEATURE 2: Event handler for SavingChanges
+        // FEATURE 4: Event handler for SavingChanges - Tracked Objects
         private static void UpdateTrackables(object sender, EventArgs e)
         {
             try
@@ -105,7 +129,7 @@ namespace BrightstarDBDemo
             }
         }
 
-        // FEATURE 1: Demonstrate Hierarchical Key Pattern
+        // FEATURE 2: Demonstrate Hierarchical Key Pattern
         static void DemonstrateHierarchicalKeys(MyEntityContext context)
         {
             Console.WriteLine("\n--- Demonstrating Hierarchical Key Pattern ---\n");
@@ -131,17 +155,20 @@ namespace BrightstarDBDemo
                 {
                     // Create a new child topic that will inherit the parent's ID in its own ID
                     var sparql = context.Topics.Create();
+                    // Set parent topic first before setting other properties
+                    sparql.ParentTopic = semWeb;
+
+                    // Now set name and description
                     sparql.Name = "SPARQL";
                     sparql.Description = "SPARQL Protocol and RDF Query Language";
-                    sparql.ParentTopic = semWeb;
 
                     try
                     {
                         context.SaveChanges();
                     }
-                    catch (BrightstarClientException)
+                    catch (BrightstarClientException ex)
                     {
-                        Console.WriteLine("Optimistic concurrency conflict detected when saving hierarchical keys.");
+                        Console.WriteLine($"Optimistic concurrency conflict detected when saving hierarchical keys: {ex.Message}");
                         // Handle conflict resolution if necessary
                     }
 
@@ -187,9 +214,9 @@ namespace BrightstarDBDemo
                         {
                             context.SaveChanges();
                         }
-                        catch (BrightstarClientException)
+                        catch (BrightstarClientException ex)
                         {
-                            Console.WriteLine("Optimistic concurrency conflict detected when saving entity casting changes.");
+                            Console.WriteLine($"Optimistic concurrency conflict detected when saving entity casting changes: {ex.Message}");
                             // Handle conflict resolution if necessary
                         }
 
@@ -222,9 +249,9 @@ namespace BrightstarDBDemo
                     {
                         context.SaveChanges();
                     }
-                    catch (BrightstarClientException)
+                    catch (BrightstarClientException ex2)
                     {
-                        Console.WriteLine("Optimistic concurrency conflict detected when saving new researcher.");
+                        Console.WriteLine($"Optimistic concurrency conflict detected when saving new researcher: {ex.Message}");
                         // Handle conflict resolution if necessary
                     }
 
@@ -234,7 +261,7 @@ namespace BrightstarDBDemo
             }
         }
 
-        // NEW FEATURE: Demonstrate SPARQL Query Execution
+        // FEATURE 6: Demonstrate SPARQL Query Execution
         static void ExecuteSparqlQuery(MyEntityContext context, string connectionString)
         {
             Console.WriteLine("\n--- Demonstrating SPARQL Query Execution ---\n");
@@ -247,12 +274,12 @@ namespace BrightstarDBDemo
 
                 // Define your SPARQL query
                 string sparqlQuery = @"
-            SELECT ?s ?p ?o
-            WHERE {
-                ?s ?p ?o .
-            }
-            LIMIT 10
-        ";
+                    SELECT ?s ?p ?o
+                    WHERE {
+                        ?s ?p ?o .
+                    }
+                    LIMIT 10
+                ";
 
                 // Execute the SPARQL query
                 var result = store.ExecuteSparql(sparqlQuery);
@@ -265,24 +292,6 @@ namespace BrightstarDBDemo
                     : result.ToString();
                 Console.WriteLine("Preview of result:");
                 Console.WriteLine(preview);
-
-                // Uncomment and adapt this code if you want to parse the SPARQL results 
-                // using VDS.RDF.Query.SparqlResultSet
-                /*
-                var resultSet = new SparqlResultSet();
-                var parser = new SparqlXmlParser();
-                using (var reader = new StringReader(result.ToString()))
-                {
-                    parser.Load(resultSet, reader);
-                }
-
-                foreach (var resultItem in resultSet.Results)
-                {
-                    string title = resultItem["title"].ToString();
-                    string authorName = resultItem["authorName"].ToString();
-                    Console.WriteLine($"Title: {title}, Author: {authorName}");
-                }
-                */
             }
             catch (Exception ex)
             {
@@ -291,89 +300,101 @@ namespace BrightstarDBDemo
             }
         }
 
+        // FEATURE 1: Populate store with initial data
         static void PopulateStore(MyEntityContext context)
         {
-            // Create topics (research areas)
-            var knowledgeGraphs = context.Topics.Create();
-            knowledgeGraphs.Name = "Knowledge Graphs";
-            knowledgeGraphs.Description = "Representation and management of structured knowledge using graph-based approaches";
-
-            var semanticWeb = context.Topics.Create();
-            semanticWeb.Name = "Semantic Web";
-            semanticWeb.Description = "Web of data that enables machines to understand the semantics of information";
-            semanticWeb.ParentTopic = knowledgeGraphs;
-
-            var rdfDatabases = context.Topics.Create();
-            rdfDatabases.Name = "RDF Databases";
-            rdfDatabases.Description = "Database systems optimized for storing and querying RDF data";
-            rdfDatabases.ParentTopic = semanticWeb;
-
-            var dotNet = context.Topics.Create();
-            dotNet.Name = ".NET Development";
-            dotNet.Description = "Development of applications using Microsoft's .NET framework";
-
-            // Create companies
-            var brightstarCompany = context.Companies.Create();
-            brightstarCompany.Name = "BrightstarDB";
-
-            var research = context.Companies.Create();
-            research.Name = "Research Institute of Technology";
-
-            // Create authors
-            var alice = context.Persons.Create();
-            alice.Name = "Alice Smith";
-            alice.Email = "alice.smith@example.org";
-            alice.Organization = "University of Example";
-            alice.Employer = research;
-
-            var bob = context.Persons.Create();
-            bob.Name = "Bob Jones";
-            bob.Email = "bob.jones@example.org";
-            bob.Organization = "Research Institute of Technology";
-            bob.Employer = research;
-
-            var charlie = context.Persons.Create();
-            charlie.Name = "Charlie Brown";
-            charlie.Email = "charlie.brown@example.org";
-            charlie.Organization = "BrightstarDB";
-            charlie.Employer = brightstarCompany;
-
-            // Create publications
-            var pub1 = context.Publications.Create();
-            pub1.Title = "Implementing Knowledge Graphs in .NET Applications";
-            pub1.PublicationDate = new DateTime(2023, 6, 15);
-            pub1.Abstract = "This paper explores approaches to implementing knowledge graphs in .NET applications, with a focus on BrightstarDB.";
-            pub1.Authors = new List<IPerson> { alice, bob };
-            pub1.Topics = new List<ITopic> { knowledgeGraphs, dotNet };
-
-            var pub2 = context.Publications.Create();
-            pub2.Title = "Introduction to Semantic Web Technologies";
-            pub2.PublicationDate = new DateTime(2022, 11, 10);
-            pub2.Abstract = "An overview of semantic web technologies and standards including RDF, OWL, and SPARQL.";
-            pub2.Authors = new List<IPerson> { alice };
-            pub2.Topics = new List<ITopic> { semanticWeb };
-
-            var pub3 = context.Publications.Create();
-            pub3.Title = "BrightstarDB: A Case Study in RDF Database Implementation";
-            pub3.PublicationDate = new DateTime(2023, 2, 28);
-            pub3.Abstract = "This case study examines the architecture and performance of BrightstarDB for enterprise applications.";
-            pub3.Authors = new List<IPerson> { bob, charlie };
-            pub3.Topics = new List<ITopic> { rdfDatabases, dotNet };
-            pub3.References = new List<IPublication> { pub1 };
-
-            // Save all changes to the store
             try
             {
+                // Create topics (research areas) in separate SaveChanges blocks
+                var knowledgeGraphs = context.Topics.Create();
+                knowledgeGraphs.Name = "Knowledge_Graphs";
+                knowledgeGraphs.Description = "Representation and management of structured knowledge using graph-based approaches";
                 context.SaveChanges();
-            }
-            catch (BrightstarClientException)
-            {
-                Console.WriteLine("Optimistic concurrency conflict detected when populating the store.");
-                // Handle conflict resolution if necessary
-            }
 
-            Console.WriteLine("Sample data created successfully!");
+                var semanticWeb = context.Topics.Create();
+                semanticWeb.Name = "Semantic_Web";
+                semanticWeb.Description = "Web of data that enables machines to understand the semantics of information";
+                semanticWeb.ParentTopic = knowledgeGraphs;
+                context.SaveChanges();
+
+                var rdfDatabases = context.Topics.Create();
+                rdfDatabases.Name = "RDF_Databases";
+                rdfDatabases.Description = "Database systems optimized for storing and querying RDF data";
+                rdfDatabases.ParentTopic = semanticWeb;
+                context.SaveChanges();
+
+                var dotNet = context.Topics.Create();
+                dotNet.Name = ".NET_Development";
+                dotNet.Description = "Development of applications using Microsoft's .NET framework";
+                context.SaveChanges();
+
+                // Create companies with separate SaveChanges
+                var brightstarCompany = context.Companies.Create();
+                brightstarCompany.Name = "BrightstarDB";
+                context.SaveChanges();
+
+                var research = context.Companies.Create();
+                research.Name = "Research Institute of Technology";
+                context.SaveChanges();
+
+                // Create authors with separate SaveChanges
+                var alice = context.Persons.Create();
+                alice.Name = "Alice Smith";
+                alice.Email = "alice.smith@example.org";
+                alice.Organization = "University of Example";
+                alice.Employer = research;
+                context.SaveChanges();
+
+                var bob = context.Persons.Create();
+                bob.Name = "Bob Jones";
+                bob.Email = "bob.jones@example.org";
+                bob.Organization = "Research Institute of Technology";
+                bob.Employer = research;
+                context.SaveChanges();
+
+                var charlie = context.Persons.Create();
+                charlie.Name = "Charlie Brown";
+                charlie.Email = "charlie.brown@example.org";
+                charlie.Organization = "BrightstarDB";
+                charlie.Employer = brightstarCompany;
+                context.SaveChanges();
+
+                // Create publications with separate SaveChanges
+                var pub1 = context.Publications.Create();
+                pub1.Title = "Implementing Knowledge Graphs in .NET Applications";
+                pub1.PublicationDate = new DateTime(2023, 6, 15);
+                pub1.Abstract = "This paper explores approaches to implementing knowledge graphs in .NET applications, with a focus on BrightstarDB.";
+                pub1.Authors = new List<IPerson> { alice, bob };
+                pub1.Topics = new List<ITopic> { knowledgeGraphs, dotNet };
+                context.SaveChanges();
+
+                var pub2 = context.Publications.Create();
+                pub2.Title = "Introduction to Semantic Web Technologies";
+                pub2.PublicationDate = new DateTime(2022, 11, 10);
+                pub2.Abstract = "An overview of semantic web technologies and standards including RDF, OWL, and SPARQL.";
+                pub2.Authors = new List<IPerson> { alice };
+                pub2.Topics = new List<ITopic> { semanticWeb };
+                context.SaveChanges();
+
+                var pub3 = context.Publications.Create();
+                pub3.Title = "BrightstarDB: A Case Study in RDF Database Implementation";
+                pub3.PublicationDate = new DateTime(2023, 2, 28);
+                pub3.Abstract = "This case study examines the architecture and performance of BrightstarDB for enterprise applications.";
+                pub3.Authors = new List<IPerson> { bob, charlie };
+                pub3.Topics = new List<ITopic> { rdfDatabases, dotNet };
+                pub3.References = new List<IPublication> { pub1 };
+                context.SaveChanges();
+
+                Console.WriteLine("Sample data created successfully!");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error populating store: {ex.Message}");
+                Console.WriteLine(ex.StackTrace);
+            }
         }
+
+        // FEATURE 7: Export Data to RDF
         static void ExportDataToRdf(MyEntityContext context, string filePath)
         {
             Console.WriteLine("\n--- Exporting RDF Data ---\n");
@@ -485,6 +506,7 @@ namespace BrightstarDBDemo
             }
         }
 
+        // FEATURE 5: LINQ Queries for graph traversal
         static void PerformQueries(MyEntityContext context)
         {
             Console.WriteLine("\n--- LINQ Query Examples ---\n");
@@ -543,16 +565,16 @@ namespace BrightstarDBDemo
             {
                 if (targetPub.CitedBy.Count() == 0)
                 {
+                    Console.WriteLine("No citations found for this publication.");
+                }
+                else
+                {
                     foreach (var citingPub in targetPub.CitedBy)
                     {
                         Console.WriteLine($"Cited by: {citingPub.Title}");
                         Console.WriteLine($"Authors: {string.Join(", ", citingPub.Authors.Select(a => a.Name))}");
                         Console.WriteLine();
                     }
-                }
-                else
-                {
-                    Console.WriteLine("No citations found for this publication.");
                 }
             }
 
@@ -582,4 +604,3 @@ namespace BrightstarDBDemo
         }
     }
 }
-
