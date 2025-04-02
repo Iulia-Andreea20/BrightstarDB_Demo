@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using BrightstarDB.EntityFramework;
 
 namespace BrightstarDBDemo
 {
+
     [Entity]
     public interface IPerson
     {
@@ -48,12 +49,16 @@ namespace BrightstarDBDemo
 
         [InverseProperty("References")]
         ICollection<IPublication> CitedBy { get; }
+
+        DateTime Created { get; set; }
+        DateTime LastModified { get; set; }
     }
 
     [Entity]
     public interface ITopic
     {
-        [Identifier("http://example.org/topics/")]
+        [Identifier("http://example.org/topics/",
+                   KeyProperties = new[] { "ParentTopic", "Name" })]
         string Id { get; }
 
         string Name { get; set; }
@@ -67,4 +72,12 @@ namespace BrightstarDBDemo
         [InverseProperty("Topics")]
         ICollection<IPublication> Publications { get; }
     }
+
+    [Entity]
+    public interface IResearcher : IPerson
+    {
+        int HIndex { get; set; }
+        string ResearchField { get; set; }
+    }
+
 }
