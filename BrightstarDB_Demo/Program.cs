@@ -7,8 +7,6 @@ using BrightstarDB.Client;
 using BrightstarDB_Demo;
 using VDS.RDF.Writing;
 using VDS.RDF;
-
-
 namespace BrightstarDBDemo
 {
     class Program
@@ -42,7 +40,7 @@ namespace BrightstarDBDemo
                     Console.WriteLine($"Using existing BrightstarDB store: {storeName}");
                 }
 
-                // Create our context with optimistic concurrency control enabled
+                // Create context with optimistic concurrency control enabled
                 Console.WriteLine("Opening BrightstarDB store...");
                 var context = new MyEntityContext(connectionString, enableOptimisticLocking: true);
 
@@ -81,9 +79,7 @@ namespace BrightstarDBDemo
                 if (Console.ReadKey().Key == ConsoleKey.Y)
                 {
                     Console.WriteLine("\nCleaning up database...");
-                    // First dispose context to release connections
                     context.Dispose();
-                    // Then delete and recreate the store
                     client.DeleteStore(storeName);
                     Console.WriteLine("Database deleted for next run.");
                 }
@@ -103,22 +99,16 @@ namespace BrightstarDBDemo
         {
             try
             {
-                // This method is invoked by the context before saving changes
                 var context = sender as MyEntityContext;
-
-                // Iterate through the tracked objects that implement IPublication
                 foreach (var obj in context.TrackedObjects.Where(x => x is IPublication))
                 {
                     var pub = obj as IPublication;
-
-                    // If this is a new entity (Created is default value)
                     if (pub.Created == DateTime.MinValue)
                     {
                         pub.Created = DateTime.Now;
                         Console.WriteLine($"Setting Created timestamp on '{pub.Title}' to {pub.Created}");
                     }
 
-                    // Always update the LastModified property
                     pub.LastModified = DateTime.Now;
                     Console.WriteLine($"Setting LastModified timestamp on '{pub.Title}' to {pub.LastModified}");
                 }
@@ -147,7 +137,7 @@ namespace BrightstarDBDemo
                     Console.WriteLine($"Parent ID: {semWeb.ParentTopic.Id}");
                 }
 
-                // Check if the child topic already exists - do this in memory too
+                // Check if the child topic already exists
                 var existingSparql = allTopics.FirstOrDefault(t => t.Name == "SPARQL" &&
                                                             t.ParentTopic != null &&
                                                             t.ParentTopic.Id == semWeb.Id);
@@ -155,10 +145,8 @@ namespace BrightstarDBDemo
                 {
                     // Create a new child topic that will inherit the parent's ID in its own ID
                     var sparql = context.Topics.Create();
-                    // Set parent topic first before setting other properties
                     sparql.ParentTopic = semWeb;
 
-                    // Now set name and description
                     sparql.Name = "SPARQL";
                     sparql.Description = "SPARQL Protocol and RDF Query Language";
 
@@ -169,7 +157,6 @@ namespace BrightstarDBDemo
                     catch (BrightstarClientException ex)
                     {
                         Console.WriteLine($"Optimistic concurrency conflict detected when saving hierarchical keys: {ex.Message}");
-                        // Handle conflict resolution if necessary
                     }
 
                     Console.WriteLine($"Created new child topic: {sparql.Name}");
@@ -188,7 +175,6 @@ namespace BrightstarDBDemo
         {
             Console.WriteLine("\n--- Demonstrating Entity Casting ---\n");
 
-            // Get a person entity
             var bob = context.Persons.FirstOrDefault(p => p.Name == "Bob Jones");
 
             if (bob != null)
@@ -196,17 +182,13 @@ namespace BrightstarDBDemo
                 Console.WriteLine($"Original person: {bob.Name}");
                 Console.WriteLine($"Entity type: {bob.GetType().Name}");
                 Console.WriteLine($"ID: {bob.Id}");
-
                 try
                 {
-                    // Access the underlying entity object
                     var entity = bob as BrightstarEntityObject;
                     if (entity != null)
                     {
-                        // Cast the person to a researcher
                         var researcher = entity.Become<IResearcher>();
 
-                        // Add researcher-specific properties
                         researcher.HIndex = 25;
                         researcher.ResearchField = "Knowledge Graph Engineering";
 
@@ -217,7 +199,6 @@ namespace BrightstarDBDemo
                         catch (BrightstarClientException ex)
                         {
                             Console.WriteLine($"Optimistic concurrency conflict detected when saving entity casting changes: {ex.Message}");
-                            // Handle conflict resolution if necessary
                         }
 
                         Console.WriteLine($"Transformed to researcher: {researcher.Name}");
@@ -233,11 +214,8 @@ namespace BrightstarDBDemo
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Entity casting failed: {ex.Message}");
-
-                    // Alternative approach: Create a new entity with the same ID
                     Console.WriteLine("Using alternative approach to demonstrate extending an entity:");
 
-                    // Create a researcher with specific properties
                     var researcher = context.Researchers.Create();
                     researcher.Name = bob.Name;
                     researcher.Email = bob.Email;
@@ -252,7 +230,6 @@ namespace BrightstarDBDemo
                     catch (BrightstarClientException ex2)
                     {
                         Console.WriteLine($"Optimistic concurrency conflict detected when saving new researcher: {ex.Message}");
-                        // Handle conflict resolution if necessary
                     }
 
                     Console.WriteLine($"Created a new entity representing {researcher.Name}");
@@ -272,7 +249,6 @@ namespace BrightstarDBDemo
                 var dataObjectContext = BrightstarService.GetDataObjectContext(connectionString);
                 var store = dataObjectContext.OpenStore("AcademicKnowledgeGraph");
 
-                // Define your SPARQL query
                 string sparqlQuery = @"
                     SELECT ?s ?p ?o
                     WHERE {
@@ -281,12 +257,10 @@ namespace BrightstarDBDemo
                     LIMIT 10
                 ";
 
-                // Execute the SPARQL query
                 var result = store.ExecuteSparql(sparqlQuery);
                 Console.WriteLine("SPARQL query executed successfully");
                 Console.WriteLine($"Result contains {result.ToString().Length} characters of data");
 
-                // Display a limited portion of the result
                 string preview = result.ToString().Length > 500
                     ? result.ToString().Substring(0, 500) + "..."
                     : result.ToString();
@@ -328,7 +302,6 @@ namespace BrightstarDBDemo
                 dotNet.Description = "Development of applications using Microsoft's .NET framework";
                 context.SaveChanges();
 
-                // Create companies with separate SaveChanges
                 var brightstarCompany = context.Companies.Create();
                 brightstarCompany.Name = "BrightstarDB";
                 context.SaveChanges();
@@ -337,7 +310,6 @@ namespace BrightstarDBDemo
                 research.Name = "Research Institute of Technology";
                 context.SaveChanges();
 
-                // Create authors with separate SaveChanges
                 var alice = context.Persons.Create();
                 alice.Name = "Alice Smith";
                 alice.Email = "alice.smith@example.org";
@@ -359,7 +331,6 @@ namespace BrightstarDBDemo
                 charlie.Employer = brightstarCompany;
                 context.SaveChanges();
 
-                // Create publications with separate SaveChanges
                 var pub1 = context.Publications.Create();
                 pub1.Title = "Implementing Knowledge Graphs in .NET Applications";
                 pub1.PublicationDate = new DateTime(2023, 6, 15);
@@ -409,7 +380,6 @@ namespace BrightstarDBDemo
                 graph.NamespaceMap.AddNamespace("dcterms", new Uri("http://purl.org/dc/terms/"));
                 graph.NamespaceMap.AddNamespace("foaf", new Uri("http://xmlns.com/foaf/0.1/"));
 
-                // Base URI for entities
                 string baseUri = "http://example.org/entities/";
 
                 // Helper function to create safe URI from entity ID
